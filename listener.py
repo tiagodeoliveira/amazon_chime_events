@@ -1,4 +1,3 @@
-import sys
 import json
 import time
 import requests
@@ -6,8 +5,8 @@ import uuid
 import queue
 import webview
 import websocket
-import pprint
-import conference_status
+import tempfile
+import time
 
 try:
     import thread
@@ -22,36 +21,44 @@ config.read('config.ini')
 if 'main' not in config.sections():
     config.add_section('main')
 
-pp = pprint.PrettyPrinter(indent=4)
-
 WAIT_TIME_IN_SEC = 60
 WAIT_TIME_STEP_IN_SEC = 1
 BASE_URL = 'https://api.express.ue1.app.chime.aws'
 SIGNIN_URL = 'https://signin.id.ue1.app.chime.aws/'
 
+messages_log = tempfile.TemporaryFile(suffix='.log', buffering=0, prefix=time.strftime("%Y%m%d-%H%M%S"))
+
+def get_messages_file_path():
+    return messages_log.name
+
+def log_ws_message(message):
+    messages_log.write(bytes(f'{message}\n', 'utf-8'))
+    messages_log.flush()
+
+def send_ws_message(ws, message):
+    ws.send(message)
+    log_ws_message(f'SEND - {message}')
+
 ######################################################################################
 # Event handler
 ######################################################################################
-def process_events(events_queue, ws):
+def process_events(events_queue, ws, on_event):
     """
         Here is where the events are taken from the queue and further parsed.
     """
     count = 0
     while True:
-        event = json.loads(events_queue.get())
+        event_string = events_queue.get()
+        event = json.loads(event_string)
         count += 1        
         klass = event.get('data', {}).get('klass', '')
         if klass == 'JoinableMeetings2':
             meeting = event.get('data', {}).get('record', {}).get('JoinableMeetings')
             if meeting:
                 channel = meeting[0].get('Channel', '')
-                ws.send(f'3:::{{"type":"subscribe","channel":"{channel}"}}')
-        elif klass == 'Roster':
-            conference_status.meeting_update(event)
+                send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"{channel}"}}')
 
-        # print(count, ' | ====================================================')
-        # print('klass:', klass)
-        # pp.pprint(event.get('data', {}))
+        on_event(klass, event)
 
         events_queue.task_done()
 
@@ -140,7 +147,6 @@ def get_websocket_url(session_token):
     if response.status_code == 200:
         return response.json()['WebSocketURL']
     else:
-        print('Could not fetch websocket url', response.text)
         return None
 
 def get_websocket_key(websocket_url, session_token):
@@ -165,45 +171,47 @@ def activate_device(session_token):
 # Websocket handling
 ######################################################################################
 def on_message(ws, message, events_queue):
+    log_ws_message(f'RECV - {message}')
     if message.startswith('3:'):
         events_queue.put(message.split('::')[1])
         it = message.split(':')[1]
-        ws.send(f'6:::{it}')
+        send_ws_message(ws, f'6:::{it}')
     elif message == '2::':
-        ws.send('2::')
+        send_ws_message(ws, f'2::')
 
-def on_error(ws, error):
-    print('error', error)
+def on_error(ws, error, on_event):
+    on_event('ws_error', error)
+    ws.close()
 
-def on_close(ws):
-    sys.exit(-1)
+def on_close(ws, on_event):
+    on_event('ws_closed', 'Websocket closed!')
+    ws.close()
 
-def on_open(ws, profile_id, device_id):
+def on_open(ws, profile_id, device_id, on_event):
     def run(*args):
-        ws.send(f'3:::{{"type":"subscribe","channel":"profile!{profile_id}"}}')
-        ws.send(f'3:::{{"type":"subscribe","channel":"webclient_device!{device_id}"}}')
-        ws.send(f'3:::{{"type":"subscribe","channel":"profile_presence!{profile_id}"}}')
+        send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"profile!{profile_id}"}}')
+        send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"webclient_device!{device_id}"}}')
+        send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"profile_presence!{profile_id}"}}')
         
     thread.start_new_thread(run, ())
-    print('Connection established!')
+    on_event('ws_open', 'Connection established!')
 
-def handle_ws():
-
+def handle_ws(socket_url, profile_id, device_id, on_event):
     events_queue = queue.Queue()
     ws = websocket.WebSocketApp(
-        url,
+        socket_url,
         on_message = lambda ws, message: on_message(ws, message, events_queue),
-        on_error = on_error,
-        on_close = on_close
+        on_error = lambda ws, error: on_error(ws, error, on_event),
+        on_close = lambda ws: on_close(ws, on_event)
     )
-    ws.on_open = lambda ws: on_open(ws, profile_id, device_id)
-    thread.start_new_thread(process_events, (events_queue, ws))
+    ws.on_open = lambda ws: on_open(ws, profile_id, device_id, on_event)
+    thread.start_new_thread(process_events, (events_queue, ws, on_event))
     ws.run_forever()
 
 ######################################################################################
 # Main
 ######################################################################################
-if __name__ == '__main__':
+def run(on_event):
     chime_token = get_token()
     session_data, session_token = get_session_data(chime_token)
     
@@ -217,7 +225,7 @@ if __name__ == '__main__':
     websocket_url = get_websocket_url(session_token)
     
     if not websocket_url:
-        sys.exit(-1)
+        raise Exception('WebSocket Url not found')
 
     websocket_key, session_id = get_websocket_key(websocket_url, session_token)
 
@@ -227,7 +235,11 @@ if __name__ == '__main__':
     profile_id = session_data['Session']['Profile']['id']
     device_id = session_data['Session']['Device']['DeviceId']
 
-    net_address = websocket_name = urlparse(websocket_url).netloc
+    net_address = urlparse(websocket_url).netloc
     url = f'wss://{net_address}/socket.io/1/websocket/{websocket_key}?session_uuid={session_id}'
 
-    handle_ws()
+    handle_ws(url, profile_id, device_id, on_event)
+    messages_log.close()
+
+if __name__ == '__main__':
+    run(lambda event_type, event_content: print('On Event', event_type, event_content))

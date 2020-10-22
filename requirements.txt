@@ -1,3 +1,5 @@
 requests
 pywebview
 websocket-client
+tableprint
+win10toast
