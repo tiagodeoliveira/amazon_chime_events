@@ -1,13 +1,19 @@
 import os
 import tableprint as tp
 import listener
+from configparser import ConfigParser
 
 from win10toast import ToastNotifier
 toaster = ToastNotifier()
 
-MY_EMAIL = 'tiagode@amazon.de'
-
 meeting_status = { 'on': False, 'participants': [] }
+
+config = ConfigParser()
+config.read('config.ini')
+
+MY_EMAIL = config.get('config', 'my_email')
+USER_PROFILE_URL = config.get('config', 'user_profile_url')
+COMPANY_DOMAIN = config.get('config', 'company_domain')
 
 def cls():
     os.system('cls' if os.name=='nt' else 'clear')
@@ -37,9 +43,9 @@ def meeting_update(meeting_event):
 
                 cls()
                 print('I am on a meeting! With:')
-                headers = ['Name', 'Email', 'PhoneTool']
-                data = [[x.get('full_name'), x.get('email'), f'https://phonetool.amazon.com/users/{x.get("email").split("@")[0]}'] for x in present_participants]
-                tp.table(data, headers)
+                headers = ['Name', 'Email', 'User Profile']
+                data = [[x.get('full_name'), x.get('email'), f'{USER_PROFILE_URL}{x.get("email").split("@")[0]}' if f'@{COMPANY_DOMAIN}' in x.get('email') else 'n/a'] for x in present_participants if x.get('email') and x.get('full_name')] 
+                tp.table(data, headers, width=[40, 65, 48])
 
         elif meeting_status['on'] == True:
             cls()
@@ -55,10 +61,15 @@ def on_event(evt_type, evt_message):
         toaster.show_toast(evt_type, evt_message)
 
 if __name__ == '__main__':
+    cls()
     while True:
         try:
-            cls()
             listener.run(on_event)
+            toaster.show_toast('Stop', 'Listener is stopped')
+            print('Listener is stopped')
         except Exception as e:
             print('Connection failed', e)
             toaster.show_toast('Error', 'Connection failed, please login again!')
+            print('Connection error', e)
+        finally:
+            print('Execution has stopped')

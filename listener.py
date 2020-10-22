@@ -1,5 +1,4 @@
 import json
-from socket import timeout
 import time
 import requests
 import uuid
@@ -17,17 +16,18 @@ except ImportError:
 from configparser import ConfigParser
 from urllib.parse import urlparse
 
-config = ConfigParser()
-config.read('config.ini')
-if 'main' not in config.sections():
-    config.add_section('main')
-
 WAIT_TIME_IN_SEC = 60
 WAIT_TIME_STEP_IN_SEC = 1
 BASE_URL = 'https://api.express.ue1.app.chime.aws'
 SIGNIN_URL = 'https://signin.id.ue1.app.chime.aws/'
+CHIME_CONFIG_SECTION = 'chime'
 
 messages_log = None
+
+config = ConfigParser()
+config.read('config.ini')
+if CHIME_CONFIG_SECTION not in config.sections():
+    config.add_section(CHIME_CONFIG_SECTION)
 
 def get_messages_file_path():
     if messages_log:
@@ -79,25 +79,28 @@ def wait_chime_login_link(window, return_list):
         Waits the chime login link to be generated
     """
     count = 0
-    while True:
-        chime_launch_link = window.get_elements('#chime-launch-link')
+    try:
+        while True:
+            chime_launch_link = window.get_elements('#chime-launch-link')
 
-        if chime_launch_link and chime_launch_link[0]:
-            return_list.append(chime_launch_link[0]['href'])
-            window.destroy()
-            break
-        
-        if count >= WAIT_TIME_IN_SEC:
-            window.destroy()
-            break
+            if chime_launch_link and chime_launch_link[0]:
+                return_list.append(chime_launch_link[0]['href'])
+                window.destroy()
+                break
+            
+            if count >= WAIT_TIME_IN_SEC:
+                window.destroy()
+                break
 
-        time.sleep(WAIT_TIME_STEP_IN_SEC)
+            time.sleep(WAIT_TIME_STEP_IN_SEC)
+    except Exception as e:
+        pass
 
 def prompt_credentials():
     return_list = []
     window = webview.create_window('Please login on Chime', SIGNIN_URL, frameless=False)
     webview.start(wait_chime_login_link, [ window, return_list ] )
-    return return_list[0]
+    return return_list[0] if return_list else None
 
 ######################################################################################
 # Chime device setup
@@ -106,22 +109,25 @@ def get_token():
     """
         Generates a new chime token or gets the one available on the config file
     """
-    chime_url = config.get('main', 'chime_url', fallback=None)
+    chime_url = config.get(CHIME_CONFIG_SECTION, 'chime_url', fallback=None)
     if not chime_url:
         chime_url = prompt_credentials()
-        config.set('main', 'chime_url', chime_url)
+        config.set(CHIME_CONFIG_SECTION, 'chime_url', chime_url)
 
-    chime_token = urlparse(chime_url).query
-    return chime_token.split('=')[1]
+    if chime_url:
+        chime_token = urlparse(chime_url).query
+        return chime_token.split('=')[1]
+    else: 
+        return None
 
 def get_device_id():
     """
         Generates a new device id or get from config file
     """
-    device_id = config.get('main', 'device_id', fallback=None)
+    device_id = config.get(CHIME_CONFIG_SECTION, 'device_id', fallback=None)
     if not device_id:
         device_id = str(uuid.uuid4())
-        config.set('main', 'device_id', device_id)
+        config.set(CHIME_CONFIG_SECTION, 'device_id', device_id)
     
     return device_id
 
@@ -129,10 +135,10 @@ def get_device_token():
     """
         Generates a new device token or get from config file
     """
-    device_token = config.get('main', 'device_token', fallback=None)
+    device_token = config.get(CHIME_CONFIG_SECTION, 'device_token', fallback=None)
     if not device_token:
         device_token = str(uuid.uuid4())
-        config.set('main', 'device_token', device_token)
+        config.set(CHIME_CONFIG_SECTION, 'device_token', device_token)
 
     return device_token
 
@@ -255,11 +261,13 @@ def run(on_event):
     global messages_log
     messages_log = tempfile.TemporaryFile(suffix='.log', buffering=0, prefix=time.strftime("%Y%m%d-%H%M%S"))
     chime_token = get_token()
+    if not chime_token:
+        raise Exception('Chime token not generated')
+
     session_data, session_token = get_session_data(chime_token)
     
     if not session_token:
-        config.clear()
-        config.add_section('main')
+        config[CHIME_CONFIG_SECTION].clear()
         chime_token = get_token()
         session_data, session_token = get_session_data(chime_token)
 
