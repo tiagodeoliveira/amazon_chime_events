@@ -55,10 +55,9 @@ def on_event(evt_type, evt_message):
         toaster.show_toast(evt_type, evt_message)
 
 if __name__ == '__main__':
-    cls()
-    print('Websocket messages log: ', listener.get_messages_file_path())
     while True:
         try:
+            cls()
             listener.run(on_event)
         except Exception as e:
             print('Connection failed', e)

@@ -1,4 +1,5 @@
 import json
+from socket import timeout
 import time
 import requests
 import uuid
@@ -26,14 +27,16 @@ WAIT_TIME_STEP_IN_SEC = 1
 BASE_URL = 'https://api.express.ue1.app.chime.aws'
 SIGNIN_URL = 'https://signin.id.ue1.app.chime.aws/'
 
-messages_log = tempfile.TemporaryFile(suffix='.log', buffering=0, prefix=time.strftime("%Y%m%d-%H%M%S"))
+messages_log = None
 
 def get_messages_file_path():
-    return messages_log.name
+    if messages_log:
+        return messages_log.name
 
 def log_ws_message(message):
-    messages_log.write(bytes(f'{message}\n', 'utf-8'))
-    messages_log.flush()
+    if messages_log:
+        messages_log.write(bytes(f'{message}\n', 'utf-8'))
+        messages_log.flush()
 
 def send_ws_message(ws, message):
     ws.send(message)
@@ -47,20 +50,26 @@ def process_events(events_queue, ws, on_event):
         Here is where the events are taken from the queue and further parsed.
     """
     count = 0
-    while True:
-        event_string = events_queue.get()
-        event = json.loads(event_string)
-        count += 1        
-        klass = event.get('data', {}).get('klass', '')
-        if klass == 'JoinableMeetings2':
-            meeting = event.get('data', {}).get('record', {}).get('JoinableMeetings')
-            if meeting:
-                channel = meeting[0].get('Channel', '')
-                send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"{channel}"}}')
+    while ws.sock != None:
+        event_string = None
+        try:
+            event_string = events_queue.get(block=True, timeout=1)
+        except:
+            pass
 
-        on_event(klass, event)
+        if event_string:
+            event = json.loads(event_string)
+            count += 1        
+            klass = event.get('data', {}).get('klass', '')
+            if klass == 'JoinableMeetings2':
+                meeting = event.get('data', {}).get('record', {}).get('JoinableMeetings')
+                if meeting:
+                    channel = meeting[0].get('Channel', '')
+                    send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"{channel}"}}')
 
-        events_queue.task_done()
+            on_event(klass, event)
+
+            events_queue.task_done()
 
 ######################################################################################
 # Chime login window
@@ -243,6 +252,8 @@ def run(on_event):
         Fetch the credentials and start the websocket.
         Eache message coming from the websocket will be passed to the on_event function
     """
+    global messages_log
+    messages_log = tempfile.TemporaryFile(suffix='.log', buffering=0, prefix=time.strftime("%Y%m%d-%H%M%S"))
     chime_token = get_token()
     session_data, session_token = get_session_data(chime_token)
     
@@ -270,7 +281,6 @@ def run(on_event):
     url = f'wss://{net_address}/socket.io/1/websocket/{websocket_key}?session_uuid={session_id}'
 
     handle_ws(url, profile_id, device_id, on_event)
-    messages_log.close()
 
 if __name__ == '__main__':
     run(lambda event_type, event_content: print('On Event', event_type, event_content))
