@@ -94,6 +94,9 @@ def prompt_credentials():
 # Chime device setup
 ######################################################################################
 def get_token():
+    """
+        Generates a new chime token or gets the one available on the config file
+    """
     chime_url = config.get('main', 'chime_url', fallback=None)
     if not chime_url:
         chime_url = prompt_credentials()
@@ -103,6 +106,9 @@ def get_token():
     return chime_token.split('=')[1]
 
 def get_device_id():
+    """
+        Generates a new device id or get from config file
+    """
     device_id = config.get('main', 'device_id', fallback=None)
     if not device_id:
         device_id = str(uuid.uuid4())
@@ -111,6 +117,9 @@ def get_device_id():
     return device_id
 
 def get_device_token():
+    """
+        Generates a new device token or get from config file
+    """
     device_token = config.get('main', 'device_token', fallback=None)
     if not device_token:
         device_token = str(uuid.uuid4())
@@ -119,6 +128,9 @@ def get_device_token():
     return device_token
 
 def get_session_data(chime_token):
+    """
+        Gets session data using the chime_token
+    """
     session_request_payload = {
         'Token': chime_token,
         'Device':{
@@ -140,6 +152,9 @@ def get_session_data(chime_token):
     return session_data, session_token
 
 def get_websocket_url(session_token):
+    """
+        Each session uses a specific websocket url
+    """
     headers = {
         'x-chime-auth-token': f'_aws_wt_session={session_token}'
     }
@@ -150,6 +165,9 @@ def get_websocket_url(session_token):
         return None
 
 def get_websocket_key(websocket_url, session_token):
+    """
+        Each websocket connection needs a specific key
+    """
     websocket_name = urlparse(websocket_url).netloc
     session_id = str(uuid.uuid4())
     headers = {
@@ -162,6 +180,9 @@ def get_websocket_key(websocket_url, session_token):
     return response_text.split(':')[0], session_id
 
 def activate_device(session_token):
+    """
+        It needs to activate this "device" in order to receive messages
+    """
     headers = {
         'x-chime-auth-token': f'_aws_wt_session={session_token}'
     }
@@ -188,6 +209,9 @@ def on_close(ws, on_event):
     ws.close()
 
 def on_open(ws, profile_id, device_id, on_event):
+    """
+        When the WS is opened it will send innitial subscribe messages
+    """
     def run(*args):
         send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"profile!{profile_id}"}}')
         send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"webclient_device!{device_id}"}}')
@@ -197,6 +221,9 @@ def on_open(ws, profile_id, device_id, on_event):
     on_event('ws_open', 'Connection established!')
 
 def handle_ws(socket_url, profile_id, device_id, on_event):
+    """
+        Start the websocket connection and runs it until the connection is closed
+    """
     events_queue = queue.Queue()
     ws = websocket.WebSocketApp(
         socket_url,
@@ -212,6 +239,10 @@ def handle_ws(socket_url, profile_id, device_id, on_event):
 # Main
 ######################################################################################
 def run(on_event):
+    """
+        Fetch the credentials and start the websocket.
+        Eache message coming from the websocket will be passed to the on_event function
+    """
     chime_token = get_token()
     session_data, session_token = get_session_data(chime_token)
     
