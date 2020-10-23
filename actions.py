@@ -8,9 +8,17 @@ toaster = ToastNotifier()
 
 meeting_status = { 'on': False, 'participants': [] }
 
+"""
+    To properly works this script need the 3 properties below, they should be inside a config.ini file (on the same dir as this script)
+    For example:
+
+    [config]
+    my_email = me@my-org.de
+    user_profile_url = https://users.my-org.de/user/
+    company_domain = my-org.de or my-org.
+"""
 config = ConfigParser()
 config.read('config.ini')
-
 MY_EMAIL = config.get('config', 'my_email')
 USER_PROFILE_URL = config.get('config', 'user_profile_url')
 COMPANY_DOMAIN = config.get('config', 'company_domain')
@@ -20,7 +28,8 @@ def cls():
 
 def meeting_update(meeting_event):
     """
-        Checks if MY_EMAIL is on a meeting or not
+        Checks if MY_EMAIL is on a meeting
+        If so, print a table with the participants of that meeting
     """
     meeting = meeting_event['data']
     meeting_id = meeting['record']['id']
