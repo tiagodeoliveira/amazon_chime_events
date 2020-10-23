@@ -253,13 +253,14 @@ def handle_ws(socket_url, profile_id, device_id, on_event):
 ######################################################################################
 # Main
 ######################################################################################
-def run(on_event):
+def run(on_event, log_file):
     """
         Fetch the credentials and start the websocket.
         Eache message coming from the websocket will be passed to the on_event function
     """
     global messages_log
-    messages_log = tempfile.TemporaryFile(suffix='.log', buffering=0, prefix=time.strftime("%Y%m%d-%H%M%S"))
+    messages_log = open(log_file, "w+b")
+
     chime_token = get_token()
     if not chime_token:
         raise Exception('Chime token not generated')
@@ -291,4 +292,5 @@ def run(on_event):
     handle_ws(url, profile_id, device_id, on_event)
 
 if __name__ == '__main__':
-    run(lambda event_type, event_content: print('On Event', event_type, event_content))
+    log_file_name = f'{tempfile.gettempdir()}/{time.strftime("%Y%m%d-%H%M%S")}.log'
+    run(lambda event_type, event_content: print('On Event', event_type, event_content), log_file_name)

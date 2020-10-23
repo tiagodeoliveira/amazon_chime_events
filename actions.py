@@ -1,6 +1,8 @@
 import os
 import tableprint as tp
 import listener
+import tempfile
+import time
 from configparser import ConfigParser
 
 from win10toast import ToastNotifier
@@ -61,6 +63,7 @@ def meeting_update(meeting_event):
             meeting_status['on'] = False
             meeting_status['participants'] = []
             toaster.show_toast('Meeting finished!', f'You are disconnected from {meeting_id}')
+            print('Meeting has ended!')
 
 def on_event(evt_type, evt_message):
     if evt_type == 'Roster':
@@ -70,15 +73,15 @@ def on_event(evt_type, evt_message):
         toaster.show_toast(evt_type, evt_message)
 
 if __name__ == '__main__':
-    cls()
     while True:
         try:
-            listener.run(on_event)
+            messages_log_file = f'{tempfile.gettempdir()}/{time.strftime("%Y%m%d-%H%M%S")}.log'
+            print('Running websocket! Log:', messages_log_file)
+            listener.run(on_event, messages_log_file)
             toaster.show_toast('Stop', 'Listener is stopped')
             print('Listener is stopped')
         except Exception as e:
-            print('Connection failed', e)
-            toaster.show_toast('Error', 'Connection failed, please login again!')
             print('Connection error', e)
         finally:
             print('Execution has stopped')
+            toaster.show_toast('Error', 'Trying to reconnect!')
