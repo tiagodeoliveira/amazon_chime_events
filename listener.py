@@ -59,7 +59,7 @@ def process_events(events_queue, ws, on_event):
 
         if event_string:
             event = json.loads(event_string)
-            count += 1        
+            count += 1
             klass = event.get('data', {}).get('klass', '')
             if klass == 'JoinableMeetings2':
                 meeting = event.get('data', {}).get('record', {}).get('JoinableMeetings')
@@ -87,7 +87,7 @@ def wait_chime_login_link(window, return_list):
                 return_list.append(chime_launch_link[0]['href'])
                 window.destroy()
                 break
-            
+
             if count >= WAIT_TIME_IN_SEC:
                 window.destroy()
                 break
@@ -99,7 +99,7 @@ def wait_chime_login_link(window, return_list):
 def prompt_credentials():
     return_list = []
     window = webview.create_window('Please login on Chime', SIGNIN_URL, frameless=False)
-    webview.start(wait_chime_login_link, [ window, return_list ] )
+    webview.start(wait_chime_login_link, [ window, return_list ], gui='qt')
     return return_list[0] if return_list else None
 
 ######################################################################################
@@ -117,7 +117,7 @@ def get_token():
     if chime_url:
         chime_token = urlparse(chime_url).query
         return chime_token.split('=')[1]
-    else: 
+    else:
         return None
 
 def get_device_id():
@@ -128,7 +128,7 @@ def get_device_id():
     if not device_id:
         device_id = str(uuid.uuid4())
         config.set(CHIME_CONFIG_SECTION, 'device_id', device_id)
-    
+
     return device_id
 
 def get_device_token():
@@ -231,7 +231,7 @@ def on_open(ws, profile_id, device_id, on_event):
         send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"profile!{profile_id}"}}')
         send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"webclient_device!{device_id}"}}')
         send_ws_message(ws, f'3:::{{"type":"subscribe","channel":"profile_presence!{profile_id}"}}')
-        
+
     thread.start_new_thread(run, ())
     on_event('ws_open', 'Connection established!')
 
@@ -266,7 +266,7 @@ def run(on_event, log_file):
         raise Exception('Chime token not generated')
 
     session_data, session_token = get_session_data(chime_token)
-    
+
     if not session_token:
         config[CHIME_CONFIG_SECTION].clear()
         chime_token = get_token()
@@ -274,7 +274,7 @@ def run(on_event, log_file):
 
     activate_device(session_token)
     websocket_url = get_websocket_url(session_token)
-    
+
     if not websocket_url:
         raise Exception('WebSocket Url not found')
 
@@ -293,4 +293,5 @@ def run(on_event, log_file):
 
 if __name__ == '__main__':
     log_file_name = f'{tempfile.gettempdir()}/{time.strftime("%Y%m%d-%H%M%S")}.log'
+    print(log_file_name)
     run(lambda event_type, event_content: print('On Event', event_type, event_content), log_file_name)
